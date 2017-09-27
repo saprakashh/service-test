@@ -1,0 +1,53 @@
+@Library('jenkinstools@master') _
+ 
+import com.splunk.jenkins.DockerRequest;
+import com.splunk.tool.plugin.docker.extension.BadDockerExitCode;
+ 
+def dockerReq = new DockerRequest(steps,
+                                  currentBuild,
+                                  env,
+                                  [imageName: "repo.splunk.com/users/saprakash/ubuntu-golang",
+                                   userId: "10777",
+                                   repoName: "ssh://git@git.splunk.com:7999/troika/relay.git",
+                                   runner: "yarn",
+                                   remotePath: "/build"])
+ 
+ 
+currentBuild.displayName = "#${env.BUILD_NUMBER}: ${env.BRANCH_NAME}"
+withSplunkWrapNode("master") {
+    try {
+ 
+        stage("Prepare and Checkout") {
+            splunkPrepareAndCheckOut request: dockerReq;
+        }
+ 
+        stage("Build") {
+            def publishDeployEnv = ["BUILDNUMBER=${env.BUILD_NUMBER}",
+                                    "FROM_COMMIT=${env.GIT_COMMIT}",
+                                    "PULL_REQUEST_ID=${PR_ID}",
+                                    "BUILD_URL=${env.BUILD_URL}"];
+ 
+            splunkRunScript request: dockerReq,
+                            containerEnv: publishDeployEnv,
+                            script:
+                                """
+                                    #!/bin/bash
+                                    pwd;
+                                    ls -al;
+                                """;
+        }
+    }
+    catch (BadDockerExitCode e) {
+        currentBuild.result = "FAILURE";
+        echo "Exception Caught: ${e.getMessage()}";
+        echo "Stack Trace: ${e.printStackTrace()}";
+    }
+    catch (Exception e) {
+        currentBuild.result = "FAILURE";
+        echo "Exception Caught: ${e.getMessage()}";
+        echo "Stack Trace: ${e.printStackTrace()}";
+    }
+    finally {
+        steps.cleanWs();
+    }
+}i
